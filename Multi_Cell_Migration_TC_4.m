@@ -26,7 +26,7 @@ runStatAnalysis = 0;%Enable(1) or Disable(0) Stat Analysis ................
 polarize = 0;%................................................Polarize cell
 angAvoid = 60;%..........Radial angle of avoidance from extending pseudopod
 Fcomp = 5e-11;%....Compressive force during contact (N)(Need a paper value) {1e-11}
-nCells = 3;%.....................................Number of cells running
+nCells = 2;%.....................................Number of cells running
 
 % Initiate matrices for MSD calculation
 % random_walk = zeros(1+run_time/delta_t,3,num_cells);
@@ -45,7 +45,7 @@ Vcell = (4/3)*pi*(Dcell/2)^3;%........................Cell's volume (um^3)
 dRecp = 10^6;%..................................Integrin receptors per cell
 % dR = dRecp/SA_cell;           %Integrin Receptor density (receptors/um^2)
 kcell = 1e-8;%................................Cell spring constant (N/um)
-contactRange = Dcell/2 + 10;%...........Contact range from cell center (um)
+contactRange = Dcell/2 + Dcell;%........Contact range from cell center (um)
 % contactRange = 0;
 bondsMin = 5000;
 
@@ -70,10 +70,13 @@ Fp = zeros(nCells,3);
 F = zeros(nCells,1);
 cVel = zeros(nCells,3);
 runSNSE = 0;
-a = zeros(nCells,1);
-b = zeros(nCells,1);
-c = zeros(nCells,1);
+a = ones(nCells,1)*Dcell/2;
+b = ones(nCells,1)*Dcell/2;
+c = ones(nCells,1)*Dcell/2;
 rCell = zeros(nCells,1);
+dmin = zeros(nCells,1);
+Acell = zeros(nCells,1);
+dR = zeros(nCells,1);
 
 % Given Constants Palsson Papers
 %rCell = -b/(0.14);               % b = -0.14*rCell; 
@@ -89,9 +92,9 @@ alpha = 1;
 Ltropo = 0.3;%.................................Length of tropocollagen (um)
 Dtropo = 0.0015;%............................Diameter of tropocollagen (um)
 % rho_I = 1000;%.....................Cell-ECM bond density 0-500 (bonds/um^2)
-Bhalf = 160;%.................Number of bound ligands at half max. force
-Bmin = 50;%.............Min bound ligands needed for pseudopod outgrowth
-Bmax = 200;%..........Min bound ligands needed for pseudopod contraction
+Bhalf = 160;%.................Number of bound ligands at half max. force    160
+Bmin = 50;%.............Min bound ligands needed for pseudopod outgrowth    50
+Bmax = 200;%..........Min bound ligands needed for pseudopod contraction    200
 
 Lfiber = 75;%.............................................Fiber length (um)
 otAngle = 0;%.......Average angle between ECM fibers and x-axis AKA otAngle
@@ -140,7 +143,7 @@ Vy = zeros(nCells,1);
 Vz = zeros(nCells,1);
 
 RGD = 9;%................................RGD Peptides/monomer/tropocollagen
-C_gel =  3;%.................................Collegen concentration [mg/ml]
+C_gel = 3;%..................................Collegen concentration [mg/ml]
 fiberDens = 0.00125;%..........................Fiber density [fibers/um^3] Derived for 3D from Shluter2012
 Fiber_D = sqrt((C_gel*6.022e20*(Ltropo+0.067)*Dtropo^2)/...
     (1e12*fiberDens*805000*0.7*Lfiber*0.9));%......Average fiber diameter
@@ -190,7 +193,6 @@ contracting = zeros(nCells,1);%.................Tracks contracting phase
 time = zeros(nCells,1);%............Tracks pseudopod extension frequency
 pos = 1;%............................Tracks cell position at each time step
 pos_step = 1;%....................Tracks cell step length at each time step
-% Lpseudo = zeros(num_cells,1);%.............................AKA pseudo_mag
 cellBehav = zeros(nCells,4);%............Tracks the behavior of the cell 
 changeFiber = 0;
 revPol = 0;
@@ -207,7 +209,6 @@ numElmts = zeros(nCells,1);
 angle1 = 0;
 Bsites = zeros(nCells,30);
 searchLength = zeros(nCells,1);
-% move_dist = zeros(nCells,1);
 bonds = zeros(nCells,1);
 dMove = zeros(nCells,1);%.............................AKA dMove or dist_byF
 % dist_byF = zeros(num_cells,3); %AKA dMove
@@ -228,11 +229,10 @@ Bpseudo = zeros(nCells,1);%.............Number bonds along entire pseudopod
 % localFibers = 0;
 % acAng = 0;
 fv = zeros(nCells,1);
-F_0 = 0;
+F0 = 0;
 % bondsTotal = 0;
 cellAx = zeros(nCells,3);% cell will be an issue, renaming to cellAx
 s = 0;
-dR = 0;
 polAngle = 0; %Was polAngle
 ve = zeros(nCells,3);
 
@@ -240,7 +240,7 @@ ve = zeros(nCells,3);
 cellContact = zeros(nCells,nCells);%Tracks if cell is within contact range
 normCDist = zeros(1,3);
 
-search_end = round(Lsearch/elmtSize)-1;
+searchEnd = round(Lsearch/elmtSize)-1;
 
 %Generates cell's initial position/polarity (+/- 0.5um from origin)
 for cell=1:nCells
@@ -253,10 +253,10 @@ for cell=1:nCells
     else
         fiberAngle(cell) = (180*(randi(2)-1)) + normrnd(otAngle,sigma);%.......Aligned fibers
     end
-
-    L_temp  = exprnd(1/crslnkPerL);%....Distance to next fiber intersection
-    if L_temp <= Lsearch
-        L_temp = Lsearch;%...........Limited to length of pseudopod tip
+    
+    Ltemp  = exprnd(1/crslnkPerL);%....Distance to next fiber intersection
+    if Ltemp <= Lsearch
+        Ltemp = Lsearch;%...........Limited to length of pseudopod tip
     end
     vPrev(cell,:) = 2*rand(1,3)-1;
     vPrev(cell,:) = vPrev(cell,:)/norm(vPrev(cell,:));
@@ -273,7 +273,7 @@ end
 % DeltaT Loop - Calculates path of cell
 %=========================================================================%
 for i = 1:dT:runTime
-
+    
     prevPos(1,:,:) = cellPos(pos,:,:);
     
     for cellOne = 1:nCells
@@ -301,10 +301,9 @@ for i = 1:dT:runTime
         if contracting(cellOne)
             for cellTwo = 1:nCells
                 if cellContact(cellOne,cellTwo)
-%                     bonds(cellTwo) = min_rho - 1;
                     Lpseudo(cellTwo) = 0;
                     time(cellTwo) = 0;
-                    bonds(cellTwo) = Bmin - 1;
+                    bonds(cellTwo) = 0;
                     Bpseudo(cellTwo) = 0;
                     pseudoVect(cellTwo,:) = zeros(1,3);
                     newAngle(cellTwo) = 1;
@@ -318,8 +317,6 @@ for i = 1:dT:runTime
             break
         end
     end
-%     needToBreak = 0;
-
 %=========================================================================%
 % Cell Loop  
 %=========================================================================%
@@ -361,7 +358,7 @@ for i = 1:dT:runTime
                 %Sets distance to next fiber intersection - must be greater search length
                 L(j)  = exprnd(1/(crslnkDens)^(1/3));%Distance to next fiber intersection
                 if L(j) <= Lsearch
-                    L(j) = Lsearch;%.Limited to length of pseudopod tip
+                    L(j) = Lsearch;%.....Limited to length of pseudopod tip
                 end
                 
                 %Calculates random fiber angle
@@ -371,13 +368,13 @@ for i = 1:dT:runTime
 %                     fiber_angle(cell) = 2*rand(1,3) - 1;%..........Randomly aligned fibers
                 %Calculates new fiber direction
                 else
-                    fiberAngle(cell) = (180*(randi(2) - 1)) + normrnd(otAngle,sigma);%.......Aligned fibers
-                    vect_1 = (L_temp*cosd(fiberAngle(cell))*vRef)/norm(vRef);    %'x' component of new vector
-                    rand_vect = 2*rand(1,3) - 1;                                      %Random vector to get new vector rotation
-                    crossprod = (cross(vRef,rand_vect));                       %Gets new vector's rotation about ref vector
-                    vect_2 =(L(j)*sind(fiberAngle(cell))*crossprod)/norm(crossprod);     %'y' component of new vector
-                    newDir = (vect_1 + vect_2);                                    %vector in the direction of all new fiber
-                    fiber(j,:) = newDir(1,:)/norm(newDir);                        %Unit vector for new fibers
+                    fiberAngle(cell) = (180*(randi(2)-1))+normrnd(otAngle,sigma);%Aligned fibers
+                    v1 = (Ltemp*cosd(fiberAngle(cell))*vRef)/norm(vRef);%'x' component of new vector
+                    vRand = 2*rand(1,3)-1;%Random vector to get new vector rotation
+                    xProd = (cross(vRef,vRand));%Gets new vector's rotation about ref vector
+                    v2 =(L(j)*sind(fiberAngle(cell))*xProd)/norm(xProd);%'y' component of new vector
+                    newDir = (v1+v2);%vector in the direction of all new fiber
+                    fiber(j,:) = newDir(1,:)/norm(newDir);%Unit vector for new fibers
                 end
                 
                 %Get fiber vectors in direction of previous direction
@@ -389,11 +386,7 @@ for i = 1:dT:runTime
             end
                 
             %Elongation Vector
-%             if vPrev(cell,:) == 0
-%                 ve = sum(fbf) + [0 0 0];
-%             else
-                ve = sum(fbf) + vPrev(cell,:)/norm(vPrev(cell,:));
-%             end
+            ve = sum(fbf) + vPrev(cell,:)/norm(vPrev(cell,:));
 
             %Cell follows acute angle between ve and prev direction
             veAngle = acosd(dot(vPrev(cell,:),ve)/(norm(vPrev(cell,:))*norm(ve)));
@@ -424,11 +417,12 @@ for i = 1:dT:runTime
             cellAx = [a(cell),b(cell),c(cell)];%.................Cell axes
 %             rCell(cell) = a(cell)/(0.14); %
             rCell(:) = 7.5;
+            dmin(:) = rCell(1)*0.14*(-1);
 
             %Calculate cell sphericity
-            A_cell = saellipsoid(cellAx);%................Cell surface area 
-            s = (pi^(1/3)*(6*Vcell)^(2/3))/A_cell;%........Cell sphericity
-            dR = dRecp/A_cell;%..Membrane integrin density [integrins/um^2]
+            Acell(cell) = saellipsoid(cellAx);%................Cell surface area 
+            s = (pi^(1/3)*(6*Vcell)^(2/3))/Acell(cell);%........Cell sphericity
+            dR(cell) = dRecp/Acell(cell);%..Membrane integrin density [integrins/um^2]
             polAngle = 180*s^2;%............................Polarity angle
             
             for j=1:localFibers(cell)
@@ -486,7 +480,7 @@ for i = 1:dT:runTime
             if (Fdm <= 0)
                 Fdm = 0.01;
             end
-            dmax = max([dL,dR]);
+            dmax = max([dL,dR(cell)]);
             Pb = ((kon*dmax)/(kon*dmax+koff))*(1-exp(-(kon*dmax+koff)*tC));
             Bsites(cell,1:n) = poissrnd(Pb*RGD*(elmtSize/Ltropo)*(Fdm/Dtropo)*(pi/2),numElmts(cell),1);
             Bpseudo(cell) = sum(Bsites(cell,1:searchLength(cell)));
@@ -507,14 +501,12 @@ for i = 1:dT:runTime
 
         if not(contracting(cell))
             dl = 0;
-            while(searchLength(cell) < numElmts(cell))%Pseudopod searches each element within dl
-                dl = dl + elmtSize;
+            while(searchLength(cell) < numElmts(cell) && dl < dT*Vpseudo)%Pseudopod searches each element within dl
                 searchLength(cell) = searchLength(cell) + 1;%Increments search area by elmt_size
-                bonds(cell) = sum(Bsites(cell,(searchLength(cell) - (search_end)):searchLength(cell)));  %Bond density for 30 elements
+                dl = dl + elmtSize;
+                bonds(cell) = sum(Bsites(cell,(searchLength(cell)-(searchEnd)):searchLength(cell)));  %Bond density for 30 elements
                 Bpseudo(cell) = Bpseudo(cell) + Bsites(cell,searchLength(cell));
-                if dl >= dT*Vpseudo
-                    break
-                elseif (bonds(cell) >= Bmax || bonds(cell) < Bmin)%Break if retracting or contracting phase
+                if bonds(cell) >= Bmax || bonds(cell) < Bmin%Break if retracting or contracting phase
                     break
                 end
             end
@@ -533,7 +525,7 @@ for i = 1:dT:runTime
                     :,cellTwo),fiberDir(cellOne,:)));
                 if pseudoCellAng(cellOne,cellTwo) < angAvoid &&...
                     cellContact(cellOne,cellTwo) == 1
-                    bonds(cellOne) = Bmin - 1; 
+                    bonds(cellOne) = 0; 
                 end
             end
         end
@@ -549,7 +541,7 @@ for i = 1:dT:runTime
             %Resets values
             Lpseudo(cell) = 0;
             time(cell) = 0;
-            bonds(cell) = Bmin - 1;
+            bonds(cell) = 0;
             Bpseudo(cell) = 0;
             pseudoVect(cell,:) = zeros(1,3);
             newAngle(cell) = 1;
@@ -574,9 +566,9 @@ for i = 1:dT:runTime
                 if rand < 0.5
                     newAngle(cell) = 1; 
                 else
-                    L_temp  = exprnd(1/(crslnkDens)^(1/3));%Distance to next fiber intersection
-                    if L_temp <= Lsearch
-                        L_temp = Lsearch;%Limited to length of pseudopod tip
+                    Ltemp  = exprnd(1/(crslnkDens)^(1/3));%Distance to next fiber intersection
+                    if Ltemp <= Lsearch
+                        Ltemp = Lsearch;%Limited to length of pseudopod tip
                     end
 
                     %Gets distance to next crosslink
@@ -593,10 +585,10 @@ for i = 1:dT:runTime
                         Fdm = 0.01;
                     end
 
-                    dmax = max([dL,dR]);
+                    dmax = max([dL,dR(cell)]);
                     Pb = ((kon*dmax)/(kon*dmax+koff))*(1-exp(-(kon*dmax+koff)*tC));
                     Bsites(cell,1:n) = poissrnd(Pb*RGD*(elmtSize/Ltropo)*(Fdm/Dtropo)*(pi/2),numElmts(cell),1);
-                    Bpseudo(cell) = sum(Bsites(cell,(searchLength(cell) - (search_end)):searchLength(cell)));
+                    Bpseudo(cell) = sum(Bsites(cell,(searchLength(cell) - (searchEnd)):searchLength(cell)));
                 end
             end
 
@@ -612,9 +604,13 @@ for i = 1:dT:runTime
             phaseRT(pos,cell) = 3;
 
             %Calculates final pseudopod direction, magnitude, and contractile force
-%                 if not(contracting(cell))
+            if not(contracting(cell))
 
                 contracting(cell) = 1;
+                pseudoVect(cell,:) = pseudoVect(cell,:) + dl*fiberDir(cell,:);
+                Lpseudo(cell) = norm(pseudoVect(cell,:));
+                Ltouching = mean(cellAx)/2;%Estimated length of fibers touching cell
+                bondsTotal(cell) = localFibers(cell)*RGD*(0.7*Ltouching/Ltropo)*(0.9*Fiber_D/Dtropo)*pi/2;
 %                     k_ecm(cell) = (1/crslnk_dens^(1/3))*gel_stiffness/1e12;
 %                     Ltouching = mean(cellAx)/2;%.............................Esimated length of fibers touching cell
 %                     bonds_total(cell) = numFibers(cell)*RGD*(0.7*Ltouching/Ltropo)*(0.9*Fiber_D/Dtropo)*pi/2;
@@ -635,7 +631,7 @@ for i = 1:dT:runTime
 %                         /((fb + fv)*k_ecm(cell)*pseudo_mag(cell)) - (F_0*(F_0 + k_ecm(cell)*0) - F_0^2*reallog(F_0 + k_ecm(cell)*0))...
 %                         /((fb + fv)*k_ecm(cell)*pseudo_mag(cell));                                  %Velocity calculated by force generated
 %                     dist_byF(cell) = vel_byF(cell)*delta_t;                                    %Distance traveled during contractile time step
-%                 end
+            end
 
 % 4/9
 %                 dist_byF(cell) = min([pseudo_mag(cell),dist_byF(cell)]);
@@ -656,7 +652,7 @@ for i = 1:dT:runTime
 
                 Lpseudo(cell) = 0;
                 time(cell) = 0;
-                bonds(cell) = Bmin - 1;
+                bonds(cell) = 0;
                 Bpseudo(cell) = 0;
                 pseudoVect(cell,:) = zeros(1,3);
                 contracting(cell) = 0;
@@ -681,22 +677,22 @@ for i = 1:dT:runTime
                 beta);%.....................Drag adjustment factor
         end
 
-        Ltouching = mean(cellAx)/2;%Estimated length of fibers touching cell
+%         Ltouching = mean(cellAx)/2;%Estimated length of fibers touching cell
 %         bonds_total(cell) = numFibers(cell)*RGD*(0.7*Ltouching/Ltropo)*(0.9*Fiber_D/Dtropo)*pi/2;
 %         bonds_total(cell) = max(bonds_total(cell),bonds_min);
-        if contracting(cell)
-            pseudoVect(cell,:) = pseudoVect(cell,:) + dl*fiberDir(cell,:);
-        end
-        Lpseudo(cell) = norm(pseudoVect(cell,:));
+%         if contracting(cell)
+%             pseudoVect(cell,:) = pseudoVect(cell,:) + dl*fiberDir(cell,:);
+%         end
+%         Lpseudo(cell) = norm(pseudoVect(cell,:));
 %         if Bpseudo(cell) == 0
 %             Bpseudo(cell) = 100;
 %         end
-        F_0 = (Fmax*Bpseudo(cell))/(Bhalf+Bpseudo(cell)); %Adhesion force
+        F0 = (Fmax*Bpseudo(cell))/(Bhalf+Bpseudo(cell)); %Adhesion force
 %             F = (F_0*k_ecm(cell)*pseudo_mag(cell))/(F_0+k_ecm(cell)*pseudo_mag(cell));             %Force applied by cell
         if Lpseudo(cell) == 0
-            kT_eff = 1;
+            kT_eff = 0;
         else
-            kT_eff = (F_0*kecm(cell)^2*Lpseudo(cell)^3)/(F_0+kecm(cell)*Lpseudo(cell))^2;
+            kT_eff = (F0*kecm(cell)^2*Lpseudo(cell)^3)/(F0+kecm(cell)*Lpseudo(cell))^2;
         end
         if isnan(kT_eff) || isinf(kT_eff)
             error('NaN Inf')
@@ -707,19 +703,6 @@ for i = 1:dT:runTime
         fv(cell) = 6*pi*eta*a(cell)*Kprime(cell);%.........Viscous friction
         if ~isreal(fv(cell))
             disp(fv(cell))
-        end
-
-        %Angle Between Major Axis and Neighboring Cell Center & C-C Distance
-        for cellOne = 1:nCells
-            for cellTwo = 1:nCells
-                if cellOne == cellTwo
-                    continue
-                end
-                pseudoCellAng(cellOne,cellTwo) = atan2d(norm...
-                    (cross(cellDist(cellOne,:,cellTwo),...
-                    fiberDir(cellOne,:))),dot(cellDist(cellOne,...
-                    :,cellTwo),fiberDir(cellOne,:)));
-            end
         end
 
         %Internal radii from cellOne to cellTwo
@@ -744,7 +727,8 @@ for i = 1:dT:runTime
                 if d(cellOne,cellTwo) < a(cellOne)
                      d(cellOne,cellTwo) = a(cellOne);
                 end
-                ecks(cellOne,cellTwo) = d(cellOne,cellTwo)/rCell(cellOne)-a(cellOne);
+%                 ecks(cellOne,cellTwo) = d(cellOne,cellTwo)/rCell(cellOne)-a(cellOne);
+                ecks(cellOne,cellTwo) = (d(cellOne,cellTwo)-dmin(cellOne))/rCell(cellOne); %/rCell(cellOne)-a(cellOne);
             end
         end
 
@@ -755,7 +739,9 @@ for i = 1:dT:runTime
                 if cellOne == cellTwo
                     surf(cellOne,cellTwo) = 0;
                 elseif cellContact(cellOne,cellTwo)
-                    surf(cellOne,cellTwo) = 0.25*exp(-5*(ecks(cellOne,cellTwo)-a(cellOne))^2)*(((sf+rCell(cellOne)*((1/di(cellOne,cellTwo))+(1/di(cellTwo,cellOne))))/(2+sf)));
+%                     surf(cellOne,cellTwo) = 0.25*exp(-5*(ecks(cellOne,cellTwo)-a(cellOne))^2)*(((sf+rCell(cellOne)*((1/di(cellOne,cellTwo))+(1/di(cellTwo,cellOne))))/(2+sf)));
+                    surf(cellOne,cellTwo) = (rCell(cellOne)/2)*(1/(di(cellOne,cellTwo)) +...
+                1/(di(cellTwo,cellOne)));
                 end
             end
         end
@@ -785,7 +771,7 @@ for i = 1:dT:runTime
 %                 if surf(cellTwo,:) == 0
 %                     tsurf(cell) = 0;
 %                 else
-%                     tsurf(cell) = sum(surf(cell,:),2)./nSurf(cell);
+%                     tsurf(cell) = sum(surf(cell,:),1)/Acell(cell);
 %                 end
 %             SE(cell) = fb(cell)*0.5 + fv(cell)*0.5;
             SE(cellTwo) = fb(cellTwo)*1;
@@ -840,10 +826,14 @@ for i = 1:dT:runTime
 %                 /((fb + fv)*k_ecm(cell)*pseudo_mag(cell));                                  %Velocity calculated by force generated
 
         if bonds(cell) >= Bmax && Lpseudo(cell) > 0.05 %Basically if contracting
-            F(cell) = (F_0*kecm(cell)*Lpseudo(cell))/...
-                (F_0+kecm(cell)*Lpseudo(cell));%..Force applied by cell
-            if F_0 == 0 
-                error('F_0 == 0')
+            if F0 == 0 || Lpseudo(cell) == 0 
+                F(cell) = 0;
+            else
+                F(cell) = (F0*kecm(cell)*Lpseudo(cell))/...
+                    (F0+kecm(cell)*Lpseudo(cell));%......Force applied by cell
+                if F0 == 0 
+                    error('F_0 == 0')
+                end
             end
         else
             F(cell) = 0;
@@ -922,12 +912,12 @@ for i = 1:dT:runTime
         if nContracting == 0 && nContact == 0%.....No reactions/No movement
             newPos(1,:,:) = prevPos(1,:,:);
 %             break
-        elseif not(contracting(cell))
-            for cellTwo = 1:nCells
-                if cellContact(cell,cellTwo)
-                    newPos(1,:,cell) = prevPos(1,:,cell);
-                end
-            end
+% % %         elseif not(contracting(cell))
+% % %             for cellTwo = 1:nCells
+% % %                 if cellContact(cell,cellTwo)
+% % %                     newPos(1,:,cell) = prevPos(1,:,cell);
+% % %                 end
+% % %             end
         elseif contracting(cell) && nContact == 0
             Vinst(cell) = norm(FNet(cell,:))/fb(cell);
             dMove(cell) = Vinst(cell)*dT;%.....%Distance traveled during contractile time step
@@ -958,35 +948,20 @@ for i = 1:dT:runTime
                 end
             end
 
-%             if isempty(SNSE) == 1 || isempty(FNet) == 1
+%             if isempty(FNet(cell,:)) == 1
+%                 Vx(cell) = 0;
+%                 Vy(cell) = 0;
+%                 Vz(cell) = 0;
             if isempty(FNet) == 1
-        %     if isnan(SNSE(:,:)) == 1 || isnan(FNet(:,:)) == 1
-        %     if isnan(Vx(:,:)) == 1 || isnan(FNet(:,:)) == 1
                 Vx(:) = 0;
                 Vy(:) = 0;
                 Vz(:) = 0;
             else
-        %         Vx = (SNSE^(-1))*Fx;
-        %         Vy = (SNSE^(-1))*Fy;
-        %         Vz = (SNSE^(-1))*Fz;
-
-        %         Vx = SNSE\Fx;
-        %         Vy = SNSE\Fy;
-        %         Vz = SNSE\Fz;
                 opts.SYM = true;
                 Vx = linsolve(SNSE,Fx,opts);
                 Vy = linsolve(SNSE,Fy,opts);
                 Vz = linsolve(SNSE,Fz,opts);
             end
-        %     
-        %     Vel = [Vx(:),Vy(:),Vz(:)];
-        %     for x = 1:num_cells
-        %         for y = 1:3
-        %             if isnan(Vel(x,y))
-        %                 Vel(x,y) = 0;
-        %             end
-        %         end
-        %     end
 
             Vel = [Vx(:),Vy(:),Vz(:)];
             for x = 1:nCells
@@ -1030,19 +1005,12 @@ for i = 1:dT:runTime
 %             if Vinst(cell) ~= 0
 %                 vPrev(cell,:) = newPos(1,:,cell) - prevPos(1,:,cell);
 %             end
-        %JKR Theory w/ R1 = R2 simplifies to pi*R*gamma/2
-        %Not used anywhere...yet.. maybe
-%         surfaceEnergy = 300;
-%         contactThresh = pi*(Dcell/2)*surfaceEnergy; %Undefined
-
 %         end 
 %     else 
 %         new_pos(1,:,:) = prev_pos(1,:,:);
         end
-        if newPos(1,:,cell) == prevPos(1,:,cell)
-            vPrev(cell) = vPrev(cell);
-        else
-%         if Vinst(cell) > 0
+
+        if newPos(1,:,cell) ~= prevPos(1,:,cell)
             vPrev(cell,:) = newPos(1,:,cell) - prevPos(1,:,cell);
         end
     end
