@@ -18,7 +18,7 @@ tic
 
 
 % Model Definitions
-runTime = 48*3600;%..........................Total runtime for model (sec) 12*4800
+runTime = 24*3600;%..........................Total runtime for model (sec) 12*4800
 dT = 2;%..................................Size of each time step (sec)
 elmtSize = 0.01;%........................Size of binding site element (um)
 runAvgVelocity = 1;%...............Enable(1) or Disable(0) Average Velocity
@@ -26,7 +26,7 @@ runFitCurves = 1;%.......................Enable(1) or Disable(0) Fit Curves
 runStatAnalysis = 0;%Enable(1) or Disable(0) Stat Analysis ................
 ...[Avg Velocity, MSD, Persistence L] Disabled it speeds up significantly
 polarize = 1;%................................................Polarize cell
-nCells = 1;%........................................Number of cells running
+nCells = 3;%........................................Number of cells running
 
 % Initiate matrices for MSD calculation
 % random_walk = zeros(1+run_time/delta_t,3,num_cells);
@@ -147,7 +147,7 @@ Vz = zeros(nCells,1);
 
 RGD = 9;%................................RGD Peptides/monomer/tropocollagen
 C_gel = 5;%..................................Collagen concentration [mg/ml]
-fiberDens = 0.00125;%..........................Fiber density [fibers/um^3] Derived for 3D from Shluter2012
+fiberDens = 0.001;%..........................Fiber density [fibers/um^3] Derived for 3D from Shluter2012
 Fiber_D = sqrt((C_gel*6.022e20*(Ltropo+0.067)*Dtropo^2)/...
     (1e12*fiberDens*805000*0.7*Lfiber*0.9));%......Average fiber diameter
 dL = (RGD*0.7*0.9)/((Ltropo+0.67)*Dtropo);%RGD ligand density [lingand/um^2]
@@ -445,10 +445,10 @@ for i = 1:dT:runTime
             end
             dmax = max([dL,dR(cell)]);
             Pb = ((kon*dmax)/(kon*dmax+koff))*(1-exp(-(kon*dmax+koff)*tC));
-            Bsites(cell,1:n) = poissrnd(Pb*RGD*0.7*0.9*(elmtSize/Ltropo)*(Fdm/Dtropo)*(pi/2),numElmts(cell),1);%..........Distributed binding sites
+            Bsites(cell,1:n) = poissrnd(Pb*RGD*0.7*0.9*(elmtSize/Ltropo+0.067)*(Fdm/Dtropo)*(pi/2),numElmts(cell),1);%..........Distributed binding sites
 %             Bsites(cell,:) = poissrnd(Pb*RGD*0.7*0.9*(elmtSize/(Ltropo+.067))*(Fdm/Dtropo)*...
 %                     (pi/2),numElmts,1);%..........Distributed binding sites
-            Bpseudo(cell) = sum(Bsites(cell,1:searchLength(cell)));
+            Bpseudo(cell) = Bpseudo(cell)+sum(Bsites(cell,1:searchLength(cell)));
             
             %Set time until new pseudopod extends
             if retracting(cell)
@@ -467,10 +467,10 @@ for i = 1:dT:runTime
         if not(contracting(cell))
             dl = 0;
             while(searchLength(cell) < numElmts(cell) && dl < dT*Vpseudo)%Pseudopod searches each element within dl
-                searchLength(cell) = searchLength(cell)+1;%Increments search area by elmt_size
-                dl = dl + elmtSize;
+                searchLength(cell) = searchLength(cell)+1;
+                dl = dl + elmtSize;%.....Increments search area by elmtSize
                 bonds(cell) = sum(Bsites(cell,(searchLength(cell)-searchEnd):searchLength(cell)));  %Bond density for 30 elements
-                Bpseudo(cell) = Bpseudo(cell) + Bsites(cell,searchLength(cell));
+                Bpseudo(cell) = Bpseudo(cell)+Bsites(cell,searchLength(cell));
                 
                 %Break if retracting or contracting phase
                 if bonds(cell) >= Bmax || bonds(cell) < Bmin
@@ -553,8 +553,8 @@ for i = 1:dT:runTime
 
                     dmax = max([dL,dR(cell)]);
                     Pb = ((kon*dmax)/(kon*dmax+koff))*(1-exp(-(kon*dmax+koff)*tC));
-                    Bsites(cell,1:n) = poissrnd(Pb*RGD*(elmtSize/Ltropo)*(Fdm/Dtropo)*(pi/2),numElmts(cell),1);
-                    Bpseudo(cell) = sum(Bsites(cell,(searchLength(cell) - (searchEnd)):searchLength(cell)));
+                    Bsites(cell,1:n) = poissrnd(Pb*RGD*0.7*0.9*(elmtSize/Ltropo + 0.067)*(Fdm/Dtropo)*(pi/2),numElmts(cell),1);
+                    Bpseudo(cell) = Bpseudo(cell)+sum(Bsites(cell,(searchLength(cell)-(searchEnd)):searchLength(cell)));
                 end
             end
 
@@ -786,15 +786,8 @@ for i = 1:dT:runTime
             end
             FNet(cell,:) = -(F(cell)*((pseudoVect(cell,:)/norm(pseudoVect(cell,:)))))-Fp;
         else
-            F(cell) = 0;
             FNet(cell,:) = -1*Fp;
         end
-
-%         if contracting(cell)
-%             FNet(cell,:) = -(F(cell)*((pseudoVect(cell,:)/norm(pseudoVect(cell,:)))))-Fp;
-%         else
-%             FNet(cell,:) = -1*Fp;
-%         end
     end
     %=====================================================================%
     % END cell loop but still in deltaT
@@ -804,18 +797,18 @@ for i = 1:dT:runTime
 %     end
     
 %     nCon = 0;
-    nContact = 0;
-    nContracting = 0;
-    for cell = 1:nCells
-        for cellTwo = 1:nCells
-            if cellContact(cell,cellTwo)
-                nContact = nContact + 0.5; 
-            end
-            if contracting(cell)
-                nContracting = nContracting + 1;
-            end
-        end
-    end
+%     nContact = 0;
+%     nContracting = 0;
+%     for cell = 1:nCells
+%         for cellTwo = 1:nCells
+%             if cellContact(cell,cellTwo)
+%                 nContact = nContact + 0.5; 
+%             end
+%             if contracting(cell)
+%                 nContracting = nContracting + 1;
+%             end
+%         end
+%     end
 %     for cell = 1:nCells
     % If only one cell is contracting then perform regular movement
 %     if nCon == 1 
@@ -859,15 +852,9 @@ for i = 1:dT:runTime
           
             
 %     if runSNSE && nCon ~= 1
-        if nContracting == 0 && nContact == 0%.....No reactions/No movement
-            newPos(1,:,:) = prevPos(1,:,:);
-%             break
-% % %         elseif not(contracting(cell))
-% % %             for cellTwo = 1:nCells
-% % %                 if cellContact(cell,cellTwo)
-% % %                     newPos(1,:,cell) = prevPos(1,:,cell);
-% % %                 end
-% % %             end
+        if isempty(contracting) && isempty(cellContact)%No reactions/No movement 
+%             if nContracting == 0 && nContact == 0%.....No reactions/No movement
+            newPos = prevPos;
 %         elseif contracting(cell) && isempty(cellContact(cell,:)) %This should be a temp if statement 3 or more cells and it won't be very usefull because multiple cells contract at the same time while others might be in contact 
 %             Vinst(cell) = norm(FNet(cell,:))/(fb(cell) + fv(cell));
 %             dMove(cell) = Vinst(cell)*dT;%.....%Distance traveled during contractile time step
