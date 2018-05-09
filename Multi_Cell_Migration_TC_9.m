@@ -21,7 +21,7 @@ dt = 2;%.......................................Size of each time step (sec)
 elmtSize = 0.01;%.........................Size of binding site element (um)
 polarize = 0.2;%..............................................Polarize cell
 nCells = 3;%........................................Number of cells running
-oriPos = 15;%.......................Distance cells initialize from origin
+oriPos = 10;%.......................Distance cells initialize from origin
 
 fprintf('Running %d cell/s over %d day/s. Start Time:  %s \n',nCells,...
     round(runTime/(24*3600)),datestr(now))
@@ -64,7 +64,7 @@ lambda = 7;%.................................................Given constant
 xNot = sqrt(1/(2*lambda));%.................................Constant in Eqn
 vNot = xNot*exp(-1*lambda*xNot^2);%.........................Constant in Eqn
 sf = 25;%..................................................Mystery Constant
-alpha = 1e-8;%...................................Adhesive strength constant
+alpha = 1e-8;%...............................Adhesive strength constant (N) 1e-8
 Fcomp = 30e-9;%........................Compressive force during contact (N)
 
 % Constant ECM Attributes
@@ -577,7 +577,7 @@ for i = 1:dt:runTime
             error('NaN Inf')
         end
         fb(cell) = bondsTotal(cell)*((kecm(cell)*kI)/((kecm(cell)+kI)*...
-            koff));%*exp(-(kT_eff)/(bondsTotal(cell)*kB*T));%................
+            koff))*exp(-(kT_eff*kI)/(bondsTotal(cell)*kB*T));%................
         ..................................Friction due to bond dissociation
         fv(cell) = 6*pi*eta*a(cell)*Kprime(cell);%.........Viscous friction
         if ~isreal(fv(cell))
@@ -825,7 +825,7 @@ for i = 1:dt:runTime
 %             dMove(cell) = min([Lpseudo(cell),dMove(cell)]);%...............
             ...........................................Eliminates overshoot
             if contracting(cell)
-                dMove(cell) = min([Lpseudo(cell),dMove(cell)]);%...............
+%                 dMove(cell) = min([Lpseudo(cell),dMove(cell)]);%...............
             ...........................................Eliminates overshoot
                 Lpseudo(cell) = Lpseudo(cell)-dMove(cell);  %specifically for contraction
             end
