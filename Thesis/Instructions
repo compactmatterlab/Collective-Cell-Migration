@@ -1,3 +1,9 @@
 Instructions
+
 Install Matlab 2014 or newer
 Install parallel computing, and curve fitting toolboxes
+Download contents of Thesis folder
+Unzip to matlab directory
+Load code
+Hit run and parametric sweep will begin
+Further Instructions 
